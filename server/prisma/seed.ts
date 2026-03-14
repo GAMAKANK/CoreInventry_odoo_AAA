@@ -14,7 +14,7 @@ async function main() {
   const manager = await prisma.user.upsert({
     where: { email: 'manager@coreinventory.com' },
     update: {},
-    create: { email: 'manager@coreinventory.com', passwordHash: managerHash, name: 'Alex Manager', role: Role.MANAGER },
+    create: { email: 'manager@coreinventory.com', passwordHash: managerHash, name: 'Stock Manager', role: Role.MANAGER },
   });
 
   const staff = await prisma.user.upsert({

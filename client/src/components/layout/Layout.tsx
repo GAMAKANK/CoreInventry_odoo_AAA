@@ -24,7 +24,7 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <aside className="w-64 flex-shrink-0 bg-pink-50 border-r border-pink-200 flex flex-col">
         {/* Logo */}
         <div className="px-4 py-5 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
@@ -58,7 +58,7 @@ export default function Layout() {
         {/* User footer */}
         <div className="p-3 border-t border-slate-100">
           <div className="flex items-center gap-3 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
               <span className="text-xs font-bold text-brand-700">
                 {user?.name?.charAt(0).toUpperCase()}
               </span>
