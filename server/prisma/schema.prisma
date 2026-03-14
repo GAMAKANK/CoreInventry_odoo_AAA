@@ -1,0 +1,300 @@
+// CoreInventory - Prisma Schema
+// PostgreSQL + Prisma ORM
+// Stock is NEVER edited directly — all changes flow through stock_movements
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  MANAGER
+  STAFF
+}
+
+enum DocumentStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum MovementType {
+  RECEIPT       // incoming stock
+  DELIVERY      // outgoing stock
+  TRANSFER_IN   // stock arriving from transfer
+  TRANSFER_OUT  // stock leaving for transfer
+  ADJUSTMENT    // manual correction
+}
+
+enum AdjustmentReason {
+  CYCLE_COUNT
+  DAMAGED
+  EXPIRED
+  FOUND
+  SYSTEM_CORRECTION
+}
+
+// ─── USERS ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  name         String
+  role         Role      @default(STAFF)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  receipts     Receipt[]
+  deliveries   Delivery[]
+  transfers    Transfer[]
+  adjustments  Adjustment[]
+
+  @@map("users")
+}
+
+// ─── CATEGORIES ───────────────────────────────────────────────────────────────
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+// ─── PRODUCTS ─────────────────────────────────────────────────────────────────
+
+model Product {
+  id               String    @id @default(cuid())
+  sku              String    @unique
+  name             String
+  description      String?
+  unit             String    @default("pcs")   // e.g. pcs, kg, liters
+  reorderLevel     Int       @default(10) @map("reorder_level")
+  categoryId       String    @map("category_id")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  category         Category  @relation(fields: [categoryId], references: [id])
+  receiptLines     ReceiptLine[]
+  deliveryLines    DeliveryLine[]
+  transferLines    TransferLine[]
+  adjustmentLines  AdjustmentLine[]
+  stockMovements   StockMovement[]
+
+  @@map("products")
+}
+
+// ─── WAREHOUSES ───────────────────────────────────────────────────────────────
+
+model Warehouse {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  address     String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  locations   Location[]
+
+  @@map("warehouses")
+}
+
+// ─── LOCATIONS (bin / zone within warehouse) ──────────────────────────────────
+
+model Location {
+  id           String    @id @default(cuid())
+  code         String
+  name         String
+  warehouseId  String    @map("warehouse_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id])
+
+  receiptLines     ReceiptLine[]
+  deliveryLines    DeliveryLine[]
+  transferInLines  TransferLine[]  @relation("TransferFrom")
+  transferOutLines TransferLine[]  @relation("TransferTo")
+  adjustmentLines  AdjustmentLine[]
+  stockMovements   StockMovement[]
+
+  @@unique([warehouseId, code])
+  @@map("locations")
+}
+
+// ─── RECEIPTS (goods-in documents) ───────────────────────────────────────────
+
+model Receipt {
+  id             String         @id @default(cuid())
+  documentNumber String         @unique @map("document_number")
+  status         DocumentStatus @default(DRAFT)
+  supplierName   String?        @map("supplier_name")
+  notes          String?
+  receivedAt     DateTime?      @map("received_at")
+  createdById    String         @map("created_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  lines          ReceiptLine[]
+
+  @@map("receipts")
+}
+
+model ReceiptLine {
+  id          String    @id @default(cuid())
+  receiptId   String    @map("receipt_id")
+  productId   String    @map("product_id")
+  locationId  String    @map("location_id")
+  quantity    Int
+  unitCost    Decimal?  @map("unit_cost") @db.Decimal(12, 4)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  receipt     Receipt   @relation(fields: [receiptId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id])
+
+  @@map("receipt_lines")
+}
+
+// ─── DELIVERIES (goods-out documents) ────────────────────────────────────────
+
+model Delivery {
+  id             String         @id @default(cuid())
+  documentNumber String         @unique @map("document_number")
+  status         DocumentStatus @default(DRAFT)
+  customerName   String?        @map("customer_name")
+  notes          String?
+  shippedAt      DateTime?      @map("shipped_at")
+  createdById    String         @map("created_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  lines          DeliveryLine[]
+
+  @@map("deliveries")
+}
+
+model DeliveryLine {
+  id          String    @id @default(cuid())
+  deliveryId  String    @map("delivery_id")
+  productId   String    @map("product_id")
+  locationId  String    @map("location_id")
+  quantity    Int
+  unitPrice   Decimal?  @map("unit_price") @db.Decimal(12, 4)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  delivery    Delivery  @relation(fields: [deliveryId], references: [id])
+  product     Product   @relation(fields: [productId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id])
+
+  @@map("delivery_lines")
+}
+
+// ─── TRANSFERS (stock movement between locations) ─────────────────────────────
+
+model Transfer {
+  id             String         @id @default(cuid())
+  documentNumber String         @unique @map("document_number")
+  status         DocumentStatus @default(DRAFT)
+  notes          String?
+  transferredAt  DateTime?      @map("transferred_at")
+  createdById    String         @map("created_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  lines          TransferLine[]
+
+  @@map("transfers")
+}
+
+model TransferLine {
+  id             String    @id @default(cuid())
+  transferId     String    @map("transfer_id")
+  productId      String    @map("product_id")
+  fromLocationId String    @map("from_location_id")
+  toLocationId   String    @map("to_location_id")
+  quantity       Int
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  transfer       Transfer  @relation(fields: [transferId], references: [id])
+  product        Product   @relation(fields: [productId], references: [id])
+  fromLocation   Location  @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation     Location  @relation("TransferTo",   fields: [toLocationId],   references: [id])
+
+  @@map("transfer_lines")
+}
+
+// ─── ADJUSTMENTS (stock corrections) ─────────────────────────────────────────
+
+model Adjustment {
+  id             String         @id @default(cuid())
+  documentNumber String         @unique @map("document_number")
+  status         DocumentStatus @default(DRAFT)
+  reason         AdjustmentReason
+  notes          String?
+  adjustedAt     DateTime?      @map("adjusted_at")
+  createdById    String         @map("created_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  lines          AdjustmentLine[]
+
+  @@map("adjustments")
+}
+
+model AdjustmentLine {
+  id             String      @id @default(cuid())
+  adjustmentId   String      @map("adjustment_id")
+  productId      String      @map("product_id")
+  locationId     String      @map("location_id")
+  quantityBefore Int         @map("quantity_before")
+  quantityAfter  Int         @map("quantity_after")
+  delta          Int         // positive = increase, negative = decrease
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  adjustment     Adjustment  @relation(fields: [adjustmentId], references: [id])
+  product        Product     @relation(fields: [productId], references: [id])
+  location       Location    @relation(fields: [locationId], references: [id])
+
+  @@map("adjustment_lines")
+}
+
+// ─── STOCK MOVEMENTS (immutable inventory ledger) ────────────────────────────
+// Every stock change MUST create a record here. Never update qty directly.
+
+model StockMovement {
+  id              String       @id @default(cuid())
+  productId       String       @map("product_id")
+  locationId      String       @map("location_id")
+  movementType    MovementType @map("movement_type")
+  quantity        Int          // positive = in, negative = out
+  balanceAfter    Int          @map("balance_after")  // snapshot of stock at this location after move
+  referenceType   String       @map("reference_type") // "RECEIPT" | "DELIVERY" | "TRANSFER" | "ADJUSTMENT"
+  referenceId     String       @map("reference_id")   // id of the source document
+  notes           String?
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  product         Product      @relation(fields: [productId], references: [id])
+  location        Location     @relation(fields: [locationId], references: [id])
+
+  @@index([productId, locationId])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
